@@ -16,6 +16,8 @@ from typing import Any, Dict, Optional
 # pyre-ignore[21]
 from fastapi import FastAPI, HTTPException
 # pyre-ignore[21]
+from fastapi.responses import RedirectResponse
+# pyre-ignore[21]
 from fastapi.middleware.cors import CORSMiddleware
 # pyre-ignore[21]
 from pydantic import BaseModel
@@ -58,6 +60,12 @@ class StepRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/")
+def read_root():
+    """Redirect root to API documentation."""
+    return RedirectResponse(url="/docs")
+
 
 @app.get("/health")
 def health():
