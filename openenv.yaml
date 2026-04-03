@@ -1,0 +1,127 @@
+name: finops-cloud-optimizer
+description: >
+  A FinOps agent environment that simulates cloud infrastructure cost optimization.
+  Agents analyze resource utilization, identify waste, and propose optimization actions
+  while maintaining production safety. Evaluates multi-step reasoning, numerical analysis,
+  and constraint-aware planning across three difficulty tiers.
+version: "1.0.0"
+entrypoint: "main.py"
+
+observation:
+  type: object
+  schema: schemas/models.py::Observation
+  description: >
+    JSON object with resource inventory (partial), budget context, action history (last 10),
+    savings progress, and system messages. Detailed utilization metrics for a resource are
+    only revealed after the agent calls the ANALYZE action on that resource.
+
+action:
+  type: object
+  schema: schemas/models.py::Action
+  fields:
+    action_type:
+      type: string
+      enum:
+        - analyze
+        - check_deps
+        - rightsize
+        - terminate
+        - schedule
+        - reserve
+        - migrate
+        - flag
+        - finalize
+      description: The type of action to perform.
+    target_resource:
+      type: string
+      nullable: true
+      description: resource_id of the target resource. Required for all actions except finalize.
+    parameters:
+      type: object
+      description: >
+        Action-specific parameters. Examples:
+          - rightsize: {"new_config": "m5.large"}
+          - schedule: {"active_hours": "08:00-20:00", "timezone": "UTC"}
+          - reserve: {"term": "1yr", "payment": "all_upfront"}
+          - migrate: {"new_class": "S3_IA"}
+
+reward:
+  type: float
+  range: [-5.0, 5.3]
+  description: >
+    Dense per-step reward combining four signals:
+    (1) Savings quality: proportional to savings vs. ground-truth maximum
+    (2) Investigation: reward for analyzing resources before modifying
+    (3) Safety: penalty for causing production incidents
+    (4) Efficiency: small per-step cost + urgency penalty for slow progress
+
+tasks:
+  - id: sandbox_cleanup
+    name: "Sandbox Cleanup"
+    difficulty: easy
+    description: >
+      Single AWS account, single region. 8 resources. Identify and eliminate
+      idle sandbox instances, unused databases, stale storage, and orphaned load balancers.
+      Trap: one staging EC2 looks idle on average CPU but has bursty p95 from CI/CD jobs.
+    max_steps: 15
+    budget_target_pct: 0.15
+    total_monthly_spend: 4200.0
+    grader: graders/graders.py::grade_easy
+
+  - id: cross_account_rightsizing
+    name: "Cross-Account Right-Sizing Sprint"
+    difficulty: medium
+    description: >
+      3 AWS accounts, 2 regions, 20 resources. Multi-step optimization including
+      dependency analysis, RI renewal identification, and storage class migration.
+      Trap: production RDS looks idle (12% avg CPU) but p95 is 78% during nightly batch.
+    max_steps: 30
+    budget_target_pct: 0.20
+    total_monthly_spend: 28500.0
+    grader: graders/graders.py::grade_medium
+
+  - id: enterprise_transformation
+    name: "Enterprise FinOps Transformation"
+    difficulty: hard
+    description: >
+      5 AWS accounts, 3 regions, 45 resources. Complex topology with EKS, SageMaker,
+      ElastiCache, NAT Gateways, and cross-account IAM roles. Multiple traps:
+      mislabeled dev account serving production traffic, circular dependency, GPU
+      scheduling vs. termination, NAT→VPC endpoint migration opportunity.
+    max_steps: 60
+    budget_target_pct: 0.25
+    total_monthly_spend: 142000.0
+    grader: graders/graders.py::grade_hard
+
+api:
+  reset:
+    method: POST
+    path: /reset
+    body: {task_id: string}
+    response:
+      observation: Observation
+      info: {task_id, max_steps, total_monthly_spend, budget_target_pct, num_resources}
+
+  step:
+    method: POST
+    path: /step
+    body: {action_type: string, target_resource: string|null, parameters: object}
+    response:
+      observation: Observation
+      reward: float
+      done: boolean
+      info: {savings_this_step, total_savings, incidents, step, valid_action}
+
+  state:
+    method: GET
+    path: /state
+    response: InternalState  # Full internal state for grading/debugging
+
+  grade:
+    method: GET
+    path: /grade
+    response:
+      total_score: float # [0.0, 1.0]
+      breakdown: {coverage, safety, efficiency, diligence}
+      bonuses: float
+      notes: List[string]
