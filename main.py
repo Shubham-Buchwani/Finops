@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # pyre-ignore[21]
 from pydantic import BaseModel
 
-from env import FinOpsEnv  # type: ignore
+from env import FinOpsEnv, RIGHTSIZE_COST_MAP  # type: ignore
 from schemas.models import Action, ActionType  # type: ignore
 from graders.graders import grade  # type: ignore
 
@@ -137,78 +137,85 @@ def get_grade():
 @app.post("/run_baseline")
 def run_baseline(req: ResetRequest):
     """Run a simple heuristic baseline agent and return the episode result."""
-    env = FinOpsEnv(task_id=req.task_id)
-    global _env
-    _env = env
-    obs, info_reset = env.reset()
-    max_steps: int = int(info_reset.get("max_steps", 30))
+    try:
+        env = FinOpsEnv(task_id=req.task_id)
+        global _env
+        _env = env
+        obs, info_reset = env.reset()
+        max_steps: int = int(info_reset.get("max_steps", 30))
 
-    history = []
-    step_num = 0
-    done = False
+        history = []
+        step_num = 0
+        done = False
 
-    # Phase 1: Analyze all resources
-    for r in obs.resources:  # type: ignore
-        if step_num >= max_steps - 2 or done:
-            break
-        action = Action(action_type=ActionType.ANALYZE, target_resource=r.resource_id)
-        obs, reward, done, info = env.step(action)  # type: ignore
-        history.append({"action": "analyze", "target": r.resource_id, "reward": reward})
-        step_num += 1  # type: ignore
+        # Phase 1: Analyze all resources
+        # Use a list copy to avoid iteration issues if the underlying list changes
+        resource_ids = [r.resource_id for r in obs.resources]
+        
+        for rid in resource_ids:
+            if step_num >= max_steps - 2 or done:
+                break
+            action = Action(action_type=ActionType.ANALYZE, target_resource=rid)
+            obs, reward, done, info = env.step(action)
+            history.append({"action": "analyze", "target": rid, "reward": reward})
+            step_num += 1
 
-    # Phase 2: Terminate idle resources with no dependents
-    for r in obs.resources:  # type: ignore
-        if step_num >= max_steps - 2 or done:
-            break
-        env_state = env.state()  # type: ignore
-        no_deps = not env_state.dependency_graph.get(r.resource_id)
-        if r.avg_cpu_utilization < 0.05 and r.monthly_cost > 0 and no_deps:
-            action = Action(action_type=ActionType.TERMINATE, target_resource=r.resource_id)
-            obs, reward, done, info = env.step(action)  # type: ignore
-            history.append({"action": "terminate", "target": r.resource_id,
-                            "reward": reward, "savings": info["savings_this_step"]})
-            step_num += 1  # type: ignore
+        # Phase 2: Terminate idle resources with no dependents
+        if not done:
+            for r in obs.resources:
+                if step_num >= max_steps - 2 or done:
+                    break
+                env_state = env.state()
+                no_deps = not env_state.dependency_graph.get(r.resource_id)
+                if r.avg_cpu_utilization < 0.05 and r.monthly_cost > 0 and no_deps:
+                    action = Action(action_type=ActionType.TERMINATE, target_resource=r.resource_id)
+                    obs, reward, done, info = env.step(action)
+                    history.append({"action": "terminate", "target": r.resource_id,
+                                    "reward": reward, "savings": info["savings_this_step"]})
+                    step_num += 1
 
-    # Phase 3: Rightsize low-cpu compute resources
-    from env import RIGHTSIZE_COST_MAP  # type: ignore
-    for r in obs.resources:  # type: ignore
-        if step_num >= max_steps - 2 or done:
-            break
-        if r.resource_type == "ec2" and r.avg_cpu_utilization < 0.15 and r.monthly_cost > 80:
-            cheaper: Dict[str, float] = {
-                k: v for k, v in RIGHTSIZE_COST_MAP.items()  # type: ignore
-                if v is not None and v < r.monthly_cost * 0.7 and v > 0 and "db." not in k
-            }
-            if cheaper:
-                new_config = min(cheaper.keys(), key=lambda k: cheaper[k])
-                action = Action(
-                    action_type=ActionType.RIGHTSIZE,
-                    target_resource=r.resource_id,
-                    parameters={"new_config": new_config},
-                )
-                obs, reward, done, info = env.step(action)  # type: ignore
-                history.append({"action": "rightsize", "target": r.resource_id,
-                                "new_config": new_config, "reward": reward})
-                step_num += 1  # type: ignore
+        # Phase 3: Rightsize low-cpu compute resources
+        if not done:
+            for r in obs.resources:
+                if step_num >= max_steps - 2 or done:
+                    break
+                if r.resource_type == "ec2" and r.avg_cpu_utilization < 0.15 and r.monthly_cost > 80:
+                    cheaper: Dict[str, float] = {
+                        k: v for k, v in RIGHTSIZE_COST_MAP.items()
+                        if v is not None and v < r.monthly_cost * 0.7 and v > 0 and "db." not in k
+                    }
+                    if cheaper:
+                        new_config = min(cheaper.keys(), key=lambda k: cheaper[k])
+                        action = Action(
+                            action_type=ActionType.RIGHTSIZE,
+                            target_resource=r.resource_id,
+                            parameters={"new_config": new_config},
+                        )
+                        obs, reward, done, info = env.step(action)
+                        history.append({"action": "rightsize", "target": r.resource_id,
+                                        "new_config": new_config, "reward": reward})
+                        step_num += 1
 
-    # Finalize
-    if not done:
-        action = Action(action_type=ActionType.FINALIZE_PLAN)
-        obs, reward, done, info = env.step(action)  # type: ignore
-        history.append({"action": "finalize", "reward": reward})
+        # Finalize
+        if not done:
+            action = Action(action_type=ActionType.FINALIZE_PLAN)
+            obs, reward, done, info = env.step(action)
+            history.append({"action": "finalize", "reward": reward})
 
-    state = env.state()  # type: ignore
-    result = grade(state.task_id, state)
+        state = env.state()
+        result = grade(state.task_id, state)
 
-    return {
-        "task_id": req.task_id,
-        "steps_taken": step_num + 1,  # type: ignore
-        "savings_achieved": state.savings_achieved,
-        "incidents_caused": state.incidents_caused,
-        "grade": {
-            "total_score": result.total_score,
-            "breakdown": result.breakdown,
-            "notes": result.notes,
-        },
-        "episode_history": history,
-    }
+        return {
+            "task_id": req.task_id,
+            "steps_taken": step_num,
+            "savings_achieved": state.savings_achieved,
+            "incidents_caused": state.incidents_caused,
+            "grade": {
+                "total_score": result.total_score,
+                "breakdown": result.breakdown,
+                "notes": result.notes,
+            },
+            "episode_history": history,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Baseline agent failed: {str(e)}")
