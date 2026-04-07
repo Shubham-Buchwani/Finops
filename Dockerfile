@@ -1,7 +1,7 @@
-FROM python:3.11-slim
+FROM python:3.11.8-slim-bookworm
 
 LABEL maintainer="FinOps Cloud Optimizer OpenEnv"
-LABEL version="1.0.0"
+LABEL version="1.0.1"
 
 WORKDIR /app
 
@@ -20,4 +20,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python -c "import httpx; httpx.get('http://localhost:7860/health').raise_for_status()"
 
 # Run server
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
