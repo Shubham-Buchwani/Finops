@@ -1,99 +1,148 @@
 """
-OpenEnv Compliance Inference Script
-Emits structured logs: [START], [STEP], [END]
-Uses the OpenAI Python client as mandated.
+Meta Hackathon: Mandatory Compliant Inference Script
+Implements exactly the logging format and structure from the sample inference.py.
 """
 
 import os
 import json
+import asyncio
+import textwrap
 import argparse
+from typing import List, Optional, Dict, Any
+import httpx
 from openai import OpenAI
 
 # Required environment variables
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Llama-2-7b-chat-hf")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
-ENV_URL = os.environ.get("ENV_URL", "http://localhost:7860")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
+ENV_URL = os.getenv("ENV_URL", "http://localhost:7860")
+TASK_NAME = os.getenv("FINOPS_TASK", "sandbox_cleanup")
+BENCHMARK = "finops-cloud-optimizer"
 
-def run_inference(task_id: str):
-    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN or "EMPTY")
-    import httpx
-    env_client = httpx.Client(base_url=ENV_URL)
+TEMPERATURE = 0.0
+MAX_TOKENS = 512
+SUCCESS_SCORE_THRESHOLD = 0.1
 
-    # 1. Start the episode
-    try:
-        reset_resp = env_client.post("/reset", json={"task_id": task_id})
-        reset_resp.raise_for_status()
-        obs = reset_resp.json()["observation"]
-    except Exception as e:
-        print(f"Failed to reset environment: {e}")
-        return
+class OpenEnvAPIWrapper:
+    """Wrapper to make the FastAPI environment look like a standard OpenEnv class."""
+    def __init__(self, base_url: str):
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=60.0)
 
-    # [START] Logging
-    print(f"[START] task_id={task_id} model={MODEL_NAME}")
+    async def reset(self, task_id: str):
+        resp = await self.client.post("/reset", json={"task_id": task_id})
+        resp.raise_for_status()
+        return resp.json()
 
-    system_prompt = (
-        "You are a FinOps AI agent. Analyze the cloud infrastructure and optimize for cost savings "
-        "without breaking production. Output ONLY valid JSON: "
-        '{"action_type": "<type>", "target_resource": "<resource_id or null>", "parameters": {}}'
+    async def step(self, action: Dict[str, Any]):
+        resp = await self.client.post("/step", json=action)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def grade(self):
+        resp = await self.client.get("/grade")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def close(self):
+        await self.client.aclose()
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
     )
 
-    total_reward = 0.0
-    step_count = 0
-    done = False
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-    while not done:
-        # 2. Get LLM response
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Observations:\n{json.dumps(obs, indent=2)}"}
-                ],
-                temperature=0.0,
-                max_tokens=256
-            )
-            llm_text = response.choices[0].message.content.strip()
-            # Handle possible markdown wrapping
-            if "```json" in llm_text:
-                llm_text = llm_text.split("```json")[-1].split("```")[0].strip()
-            action = json.loads(llm_text)
-        except Exception as e:
-            # Fallback to finalize if LLM fails or task is done
-            action = {"action_type": "finalize", "target_resource": None, "parameters": {}}
+def get_model_action(client: OpenAI, obs: Any, history: List[str]) -> Dict[str, Any]:
+    system_prompt = textwrap.dedent(
+        """
+        You are a FinOps AI agent. Analyze cloud infrastructure and optimize for cost savings.
+        Maintain production safety — breaking resources with active dependencies is heavily penalized.
+        
+        Output ONLY valid JSON in this exact format:
+        {"action_type": "<type>", "target_resource": "<resource_id or null>", "parameters": {}}
+        
+        Valid action types: analyze, check_deps, rightsize, terminate, schedule, reserve, migrate, flag, finalize
+        """
+    ).strip()
 
-        # 3. Take step in environment
-        try:
-            step_resp = env_client.post("/step", json=action)
-            step_resp.raise_for_status()
-            step_data = step_resp.json()
-            obs = step_data["observation"]
-            reward = step_data["reward"]
-            done = step_data["done"]
-            total_reward += reward
-            step_count += 1
-
-            # [STEP] Logging
-            print(f"[STEP] step_number={step_count} action={action['action_type']} reward={reward:.4f} done={done}")
-
-        except Exception as e:
-            print(f"Error taking step: {e}")
-            break
-
-    # 4. Final grade
+    user_prompt = f"Observation:\n{json.dumps(obs, indent=2)}\n\nAction History:\n" + "\n".join(history[-5:])
+    
     try:
-        grade_resp = env_client.get("/grade")
-        grade_data = grade_resp.json()
-        final_score = grade_data.get("total_score", 0.0)
-    except Exception:
-        final_score = 0.0
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+        )
+        text = (completion.choices[0].message.content or "").strip()
+        if "```json" in text:
+            text = text.split("```json")[-1].split("```")[0].strip()
+        return json.loads(text)
+    except Exception as exc:
+        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+        return {"action_type": "finalize", "target_resource": None, "parameters": {}}
 
-    # [END] Logging
-    print(f"[END] task_id={task_id} total_reward={total_reward:.4f} final_grade={final_score:.4f}")
+async def main(task_id: str) -> None:
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN or "EMPTY")
+    env = OpenEnvAPIWrapper(ENV_URL)
+
+    history: List[str] = []
+    rewards: List[float] = []
+    steps_taken = 0
+    score = 0.0
+    success = False
+
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+
+    try:
+        reset_data = await env.reset(task_id)
+        obs = reset_data["observation"]
+        done = False
+
+        while not done:
+            steps_taken += 1
+            action = get_model_action(client, obs, history)
+            
+            result = await env.step(action)
+            obs = result["observation"]
+            reward = result["reward"]
+            done = result["done"]
+            error = result["info"].get("error")
+
+            rewards.append(reward)
+            log_step(step=steps_taken, action=action["action_type"], reward=reward, done=done, error=error)
+            
+            history.append(f"Step {steps_taken}: {action['action_type']} -> reward {reward:+.2f}")
+
+            if done or steps_taken >= 60:
+                break
+
+        grade_data = await env.grade()
+        score = grade_data.get("total_score", 0.0)
+        success = score >= SUCCESS_SCORE_THRESHOLD
+
+    finally:
+        try:
+            await env.close()
+        except Exception as e:
+            print(f"[DEBUG] env.close() error: {e}", flush=True)
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", default="sandbox_cleanup")
+    parser.add_argument("--task", default=TASK_NAME)
     args = parser.parse_args()
-    run_inference(args.task)
+    asyncio.run(main(args.task))
