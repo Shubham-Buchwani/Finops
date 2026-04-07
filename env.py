@@ -14,7 +14,7 @@ from schemas.models import (
 )
 
 
-SCENARIO_DIR = Path(__file__).parent / "scenarios"
+SCENARIO_DIR = Path(__file__).resolve().parent / "scenarios"
 
 TASK_CONFIG: Dict[str, Dict[str, Any]] = {
     "sandbox_cleanup": {

@@ -9,7 +9,7 @@ entrypoint: "main.py"
 
 observation:
   type: object
-  schema: schemas/models.py::Observation
+  schema: schemas.models:Observation
   description: >
     JSON object with resource inventory (partial), budget context, action history (last 10),
     savings progress, and system messages. Detailed utilization metrics for a resource are
@@ -17,7 +17,7 @@ observation:
 
 action:
   type: object
-  schema: schemas/models.py::Action
+  schema: schemas.models:Action
   fields:
     action_type:
       type: string
@@ -66,7 +66,7 @@ tasks:
     max_steps: 15
     budget_target_pct: 0.15
     total_monthly_spend: 4200.0
-    grader: graders/graders.py::grade_easy
+    grader: graders.graders:grade_easy
 
   - id: cross_account_rightsizing
     name: "Cross-Account Right-Sizing Sprint"
@@ -78,7 +78,7 @@ tasks:
     max_steps: 30
     budget_target_pct: 0.20
     total_monthly_spend: 28500.0
-    grader: graders/graders.py::grade_medium
+    grader: graders.graders:grade_medium
 
   - id: enterprise_transformation
     name: "Enterprise FinOps Transformation"
@@ -91,7 +91,7 @@ tasks:
     max_steps: 60
     budget_target_pct: 0.25
     total_monthly_spend: 142000.0
-    grader: graders/graders.py::grade_hard
+    grader: graders.graders:grade_hard
 
 api:
   reset:
