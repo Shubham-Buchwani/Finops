@@ -1,4 +1,4 @@
-FROM python:3.11.8-slim-bookworm
+FROM public.ecr.aws/docker/library/python:3.11-slim
 
 LABEL maintainer="FinOps Cloud Optimizer OpenEnv"
 LABEL version="1.0.1"
