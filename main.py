@@ -73,7 +73,8 @@ def health():
 
 
 @app.post("/reset")
-def reset(req: ResetRequest):
+def reset(req: Optional[ResetRequest] = None):
+    req = req or ResetRequest()
     global _env
     try:
         _env = FinOpsEnv(task_id=req.task_id)
@@ -135,8 +136,9 @@ def get_grade():
 
 
 @app.post("/run_baseline")
-def run_baseline(req: ResetRequest):
+def run_baseline(req: Optional[ResetRequest] = None):
     """Run a simple heuristic baseline agent and return the episode result."""
+    req = req or ResetRequest()
     try:
         env = FinOpsEnv(task_id=req.task_id)
         global _env
