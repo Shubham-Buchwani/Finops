@@ -28,4 +28,13 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["graders", "schemas"]
+packages = ["server", "schemas", "graders"]
+py-modules = ["main", "env", "inference", "run_baseline"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json"]
+
+[project.entry-points."openenv.graders"]
+grade_easy = "graders.graders:grade_easy"
+grade_medium = "graders.graders:grade_medium"
+grade_hard = "graders.graders:grade_hard"
