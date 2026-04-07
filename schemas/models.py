@@ -131,6 +131,9 @@ class Resource(BaseModel):
     utilization: UtilizationDetail
     dependencies: List[str] = Field(default_factory=list)  # IDs this resource depends on
     dependents: List[str] = Field(default_factory=list)    # IDs that depend on this
+    is_safe_to_terminate: bool = False
+    is_safe_to_rightsize: bool = False
+    optimal_action: Optional[OptimalAction] = None
 
 
 class InternalState(BaseModel):

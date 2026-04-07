@@ -44,9 +44,14 @@ Valid action types: analyze, check_deps, rightsize, terminate, schedule, reserve
 """
 
 def call_llm(messages: list, client: httpx.Client) -> str:
+    headers = {}
+    auth_token = HF_TOKEN or os.environ.get('OPENAI_API_KEY', '')
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
     response = client.post(
         f"{API_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {HF_TOKEN or os.environ.get('OPENAI_API_KEY', '')}"},
+        headers=headers,
         json={
             "model": MODEL_NAME,
             "messages": messages,
