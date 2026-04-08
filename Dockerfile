@@ -1,7 +1,7 @@
 FROM public.ecr.aws/docker/library/python:3.11-slim
 
 LABEL maintainer="FinOps Cloud Optimizer OpenEnv"
-LABEL version="1.0.1"
+LABEL version="1.0.2"
 
 WORKDIR /app
 
@@ -15,8 +15,8 @@ COPY . .
 # Expose FastAPI port (HF Spaces expects 7860)
 EXPOSE 7860
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check (Increased start period for robustness)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD python -c "import httpx; httpx.get('http://localhost:7860/health').raise_for_status()"
 
 # Run server

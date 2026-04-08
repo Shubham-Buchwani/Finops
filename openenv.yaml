@@ -5,7 +5,7 @@ description: >
   while maintaining production safety. Evaluates multi-step reasoning, numerical analysis,
   and constraint-aware planning across three difficulty tiers.
 version: "1.0.0"
-entrypoint: "main.py"
+entrypoint: "server/app.py"
 
 observation:
   type: object
@@ -122,6 +122,12 @@ api:
     path: /grade
     response:
       total_score: float # [0.0, 1.0]
-      breakdown: {coverage, safety, efficiency, diligence}
+      breakdown:
+        type: object
+        properties:
+          coverage: {type: float}
+          safety: {type: float}
+          efficiency: {type: float}
+          diligence: {type: float}
       bonuses: float
       notes: List[string]

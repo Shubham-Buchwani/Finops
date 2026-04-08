@@ -195,7 +195,9 @@ class FinOpsEnv:
             "step": s.step_count,
             "valid_action": valid,
         }
-        return obs, float(f"{reward:.4f}"), s.done, info
+        # Clamp reward to range specified in openenv.yaml [-5.0, 5.3]
+        clamped_reward = max(-5.0, min(5.3, reward))
+        return obs, float(f"{clamped_reward:.4f}"), s.done, info
 
     def state(self) -> InternalState:
         s = self._state
