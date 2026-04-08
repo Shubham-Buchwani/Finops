@@ -88,11 +88,16 @@ def get_model_action(client: OpenAI, obs: Any, history: List[str]) -> Dict[str, 
             max_tokens=MAX_TOKENS,
         )
         text = (completion.choices[0].message.content or "").strip()
-        if "```json" in text:
-            text = text.split("```json")[-1].split("```")[0].strip()
+        
+        # Robust parsing for JSON block
+        import re
+        json_match = re.search(r"\{.*\}", text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(0))
+        
         return json.loads(text)
     except Exception as exc:
-        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+        print(f"[DEBUG] Model request failed or invalid JSON: {exc}", flush=True)
         return {"action_type": "finalize", "target_resource": None, "parameters": {}}
 
 async def main(task_id: str) -> None:

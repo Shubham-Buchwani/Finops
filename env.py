@@ -78,18 +78,18 @@ RESERVE_DISCOUNT: Dict[str, float] = {
     "3yr_none": 0.40,
 }
 
-# Dense reward weights
-R_SAVINGS_MAX = 5.0
-R_INVESTIGATE_WASTE = 0.3
-R_INVESTIGATE_ANY = 0.05
-R_CHECK_DEP = 0.2
-R_INCIDENT = -3.0
-R_BLIND_MODIFY = -0.5
-R_BLIND_PROD_CHANGE = -0.3
-R_TERMINAL_FAIL = -5.0
-R_NOOP = -0.1
-R_URGENCY = -0.2
-R_STEP_COST = -0.02
+# Normalized reward weights [0.0, 1.0]
+R_SAVINGS_MAX = 0.8
+R_INVESTIGATE_WASTE = 0.05
+R_INVESTIGATE_ANY = 0.01
+R_CHECK_DEP = 0.04
+R_INCIDENT = 0.0
+R_BLIND_MODIFY = 0.0
+R_BLIND_PROD_CHANGE = 0.0
+R_TERMINAL_FAIL = 0.0
+R_NOOP = 0.0
+R_URGENCY = 0.0
+R_STEP_COST = 0.0
 
 
 class FinOpsEnv:
@@ -195,8 +195,8 @@ class FinOpsEnv:
             "step": s.step_count,
             "valid_action": valid,
         }
-        # Clamp reward to range specified in openenv.yaml [-5.0, 5.3]
-        clamped_reward = max(-5.0, min(5.3, reward))
+        # Clamp reward to range specified in openenv.yaml [0.0, 1.0]
+        clamped_reward = max(0.0, min(1.0, reward))
         return obs, float(f"{clamped_reward:.4f}"), s.done, info
 
     def state(self) -> InternalState:

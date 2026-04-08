@@ -5,7 +5,7 @@ description: >
   while maintaining production safety. Evaluates multi-step reasoning, numerical analysis,
   and constraint-aware planning across three difficulty tiers.
 version: "1.0.0"
-entrypoint: "server/app.py"
+entrypoint: "main.py"
 
 observation:
   type: object
@@ -47,7 +47,7 @@ action:
 
 reward:
   type: float
-  range: [-5.0, 5.3]
+  range: [0.0, 1.0]
   description: >
     Dense per-step reward combining four signals:
     (1) Savings quality: proportional to savings vs. ground-truth maximum
@@ -63,7 +63,7 @@ tasks:
       Single AWS account, single region. 8 resources. Identify and eliminate
       idle sandbox instances, unused databases, stale storage, and orphaned load balancers.
       Trap: one staging EC2 looks idle on average CPU but has bursty p95 from CI/CD jobs.
-    max_steps: 15
+    max_steps: 10
     budget_target_pct: 0.15
     total_monthly_spend: 4200.0
     grader: graders.graders:grade_easy
@@ -75,7 +75,7 @@ tasks:
       3 AWS accounts, 2 regions, 20 resources. Multi-step optimization including
       dependency analysis, RI renewal identification, and storage class migration.
       Trap: production RDS looks idle (12% avg CPU) but p95 is 78% during nightly batch.
-    max_steps: 30
+    max_steps: 15
     budget_target_pct: 0.20
     total_monthly_spend: 28500.0
     grader: graders.graders:grade_medium
@@ -88,7 +88,7 @@ tasks:
       ElastiCache, NAT Gateways, and cross-account IAM roles. Multiple traps:
       mislabeled dev account serving production traffic, circular dependency, GPU
       scheduling vs. termination, NAT→VPC endpoint migration opportunity.
-    max_steps: 60
+    max_steps: 25
     budget_target_pct: 0.25
     total_monthly_spend: 142000.0
     grader: graders.graders:grade_hard
